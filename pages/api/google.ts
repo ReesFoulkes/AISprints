@@ -21,7 +21,7 @@ const handler = async (req: NextApiRequest, res: NextApiResponse<any>) => {
         googleAPIKey ? googleAPIKey : process.env.GOOGLE_API_KEY
       }&cx=${
         googleCSEId ? googleCSEId : process.env.GOOGLE_CSE_ID
-      }&q=${query}&num=5`,
+      }&q=${query}&num=3`, // Reducing num to 3
     );
 
     const googleData = await googleRes.json();

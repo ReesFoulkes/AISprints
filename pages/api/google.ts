@@ -1,14 +1,12 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-
 import { OPENAI_API_HOST } from '@/utils/app/const';
 import { cleanSourceText } from '@/utils/server/google';
-
 import { Message } from '@/types/chat';
 import { GoogleBody, GoogleSource } from '@/types/google';
-
 import { Readability } from '@mozilla/readability';
 import endent from 'endent';
 import jsdom, { JSDOM } from 'jsdom';
+import pLimit from 'p-limit';
 
 const handler = async (req: NextApiRequest, res: NextApiResponse<any>) => {
   try {
@@ -37,49 +35,34 @@ const handler = async (req: NextApiRequest, res: NextApiResponse<any>) => {
       text: '',
     }));
 
+    const limit = pLimit(2); // limit the number of concurrent requests to 2
+
     const sourcesWithText: any = await Promise.all(
-      sources.map(async (source) => {
-        try {
-          const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Request timed out')), 10000),
-          );
+      sources.map((source) =>
+        limit(async () => {
+          try {
+            const res = await fetch(source.link);
+            const html = await res.text();
 
-          const res = (await Promise.race([
-            fetch(source.link),
-            timeoutPromise,
-          ])) as any;
+            const dom = new JSDOM(html);
+            const doc = dom.window.document;
+            const parsed = new Readability(doc).parse();
 
-          // if (res) {
-          const html = await res.text();
+            if (parsed) {
+              const sourceText = cleanSourceText(parsed.textContent);
 
-          const virtualConsole = new jsdom.VirtualConsole();
-          virtualConsole.on('error', (error) => {
-            if (!error.message.includes('Could not parse CSS stylesheet')) {
-              console.error(error);
+              return {
+                ...source,
+                text: sourceText.slice(0, 2000),
+              } as GoogleSource;
             }
-          });
-
-          const dom = new JSDOM(html, { virtualConsole });
-          const doc = dom.window.document;
-          const parsed = new Readability(doc).parse();
-
-          if (parsed) {
-            let sourceText = cleanSourceText(parsed.textContent);
-
-            return {
-              ...source,
-              // TODO: switch to tokens
-              text: sourceText.slice(0, 2000),
-            } as GoogleSource;
+            return null;
+          } catch (error) {
+            console.error(error);
+            return null;
           }
-          // }
-
-          return null;
-        } catch (error) {
-          console.error(error);
-          return null;
-        }
-      }),
+        }),
+      ),
     );
 
     const filteredSources: GoogleSource[] = sourcesWithText.filter(Boolean);

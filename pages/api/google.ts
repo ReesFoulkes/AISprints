@@ -41,7 +41,14 @@ const handler = async (req: NextApiRequest, res: NextApiResponse<any>) => {
       sources.map((source) =>
         limit(async () => {
           try {
-            const res = await fetch(source.link);
+            const timeoutPromise = new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('Request timed out')), 5000), // Reducing timeout to 5s
+            );
+
+            const res = (await Promise.race([
+              fetch(source.link),
+              timeoutPromise,
+            ])) as any;
             const html = await res.text();
 
             const dom = new JSDOM(html);
